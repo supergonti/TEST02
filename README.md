@@ -8,5 +8,8 @@ Target output:
 Local preview:
 - http://127.0.0.1:8002/hamada_offshore_current.html
 
+GitHub Pages:
+- https://supergonti.github.io/TEST02/hamada_offshore_current.html
+
 Reference:
 - C:\Dev\fishing-system Muroto\muroto_offshore_current.html
