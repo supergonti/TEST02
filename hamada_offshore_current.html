@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="浜田沖ポイントの潮流・水温・塩分データを確認するダッシュボード">
+  <title>浜田沖 潮流ダッシュボード</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" defer></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;background:#eef1f5;color:#263645;min-height:100vh}
+    header{position:sticky;top:0;z-index:20;background:#163d63;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.22)}
+    h1{font-size:1.12rem;font-weight:700;letter-spacing:.02em}
+    main{max-width:1120px;margin:0 auto;padding:22px 16px 34px}
+    button{font:inherit}
+    .header-meta{font-size:.78rem;opacity:.78;white-space:nowrap}
+    .header-actions{display:flex;align-items:center;gap:8px}
+    .btn{border:1px solid #c5d5ea;border-radius:6px;background:#fff;color:#163d63;padding:7px 12px;font-weight:700;font-size:.82rem;cursor:pointer}
+    .btn:hover{background:#edf5ff}
+    .btn.primary{background:#163d63;color:#fff;border-color:#163d63}
+    .btn.primary:hover{background:#24547f}
+    #fileInput{display:none}
+    .panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+    .notice{padding:12px 14px;margin-bottom:16px;background:#fffdf4;border-left:4px solid #d89922;color:#5c4a20;font-size:.86rem;line-height:1.6}
+    .section{margin-bottom:22px}
+    .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:7px;border-bottom:2px solid #c5d5ea}
+    .section-title{font-size:1rem;color:#163d63;font-weight:700}
+    .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:11px}
+    .card{padding:15px 16px}
+    .label{font-size:.74rem;color:#748494;margin-bottom:5px}
+    .value{font-size:1.38rem;color:#163d63;font-weight:800}
+    .value.small{font-size:1rem}
+    .sub{font-size:.72rem;color:#8291a0;margin-top:4px}
+    .coord-bar{display:flex;flex-wrap:wrap;align-items:center;gap:7px 16px;margin-top:12px;padding:10px 13px;background:#f5f8fc;border-radius:8px;color:#536577;font-size:.76rem}
+    .coord-bar strong{color:#163d63;margin-right:4px}
+    .toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .pill{border:1px solid #c5d5ea;border-radius:18px;background:#fff;color:#4c5b68;padding:5px 13px;font-size:.8rem;cursor:pointer}
+    .pill.active{background:#163d63;border-color:#163d63;color:#fff}
+    .date-input{border:1px solid #c5d5ea;border-radius:6px;padding:4px 8px;font-size:.8rem;color:#34495e;background:#fff}
+    .charts{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
+    .chart-card{padding:14px}
+    .chart-label{font-size:.8rem;color:#6b7b8a;margin-bottom:8px}
+    .chart-box{height:270px;position:relative}
+    .table-wrap{overflow:hidden}
+    .table-scroll{max-height:365px;overflow:auto}
+    table{width:100%;border-collapse:collapse;font-size:.86rem}
+    th{position:sticky;top:0;background:#163d63;color:#fff;padding:9px 8px;font-size:.78rem;text-align:center;z-index:1}
+    td{padding:8px;border-bottom:1px solid #edf0f4;text-align:center}
+    td.date-col{text-align:left;font-weight:700;color:#32465a;line-height:1.35}
+    tr:hover td{background:#f6f9ff}
+    .arrow{display:inline-block;color:#163d63;font-size:1.2rem;line-height:1}
+    .dir{display:block;color:#8291a0;font-size:.68rem;margin-top:1px}
+    .speed-low{color:#2479b8}.speed-mid{color:#208864}.speed-high{color:#c0392b;font-weight:800}
+    #dropZone{border:2px dashed #a8bbcf;background:#fff;border-radius:8px;padding:24px 18px;text-align:center;color:#6b7b8a;cursor:pointer;margin-bottom:16px}
+    #dropZone.dragover{background:#edf6ff;border-color:#163d63}
+    #dropZone strong{color:#163d63}
+    #mapModal{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);align-items:center;justify-content:center;padding:16px}
+    #mapModal.open{display:flex}
+    .map-inner{width:min(840px,96vw);background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 10px 36px rgba(0,0,0,.34)}
+    .map-header{display:flex;align-items:center;justify-content:space-between;background:#163d63;color:#fff;padding:12px 15px}
+    .map-header h2{font-size:.95rem}
+    .map-close{background:transparent;color:#fff;border:0;font-size:1.45rem;cursor:pointer;line-height:1}
+    #mapContainer{height:56vh;min-height:320px}
+    .summary-bar{display:flex;gap:7px;flex-wrap:wrap}
+    .summary-pill{display:inline-block;border-radius:18px;padding:5px 11px;font-size:.78rem;font-weight:700}
+    .ok{background:#dff3e6;color:#17633b}.warn{background:#fff0d6;color:#955c00}
+    @media(max-width:680px){
+      header{padding:10px 12px;align-items:flex-start}
+      h1{font-size:.92rem;line-height:1.35}
+      .header-meta{display:none}
+      main{padding:14px 10px 26px}
+      .card-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+      .card{padding:12px}
+      .value{font-size:1.12rem}
+      .chart-box{height:230px}
+      table{min-width:520px;font-size:.76rem}
+      th,td{padding:6px 5px}
+      .toolbar label{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>浜田沖 潮流ダッシュボード</h1>
+      <div class="header-meta" id="headerMeta">34°55'26.0"N 132°00'47.8"E</div>
+    </div>
+    <div class="header-actions">
+      <span class="header-meta" id="headerStatus"></span>
+      <button class="btn" id="reloadBtn" type="button">再読み込み</button>
+      <button class="btn" id="manualBtn" type="button">CSV選択</button>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+  </header>
+
+  <main>
+    <div class="notice panel">
+      GitHub Pages で単体確認できるよう、初期状態ではデモデータを表示します。実データ CSV を読み込むと表示が切り替わります。
+      CSV列は <strong>date,speed_kn,speed_ms,direction,temp_c,salinity</strong> を想定しています。
+    </div>
+
+    <div id="dropZone" role="button" tabindex="0">
+      <strong>CSVをドラッグ＆ドロップ</strong> またはクリックして選択<br>
+      <small>対象例: hamada_offshore_current_all.csv</small>
+    </div>
+
+    <section class="section" aria-labelledby="dashboardTitle">
+      <div class="section-header">
+        <h2 class="section-title" id="dashboardTitle">ダッシュボード</h2>
+        <button class="btn" type="button" id="mapBtn">地図を開く</button>
+      </div>
+      <div class="card-grid">
+        <div class="card panel"><div class="label">データ件数</div><div class="value" id="totalRows">-</div><div class="sub" id="totalRowsSub"></div></div>
+        <div class="card panel"><div class="label">開始日</div><div class="value small" id="dateFrom">-</div></div>
+        <div class="card panel"><div class="label">最終日</div><div class="value small" id="dateTo">-</div></div>
+        <div class="card panel"><div class="label">日数</div><div class="value" id="totalDays">-</div><div class="sub">日間</div></div>
+        <div class="card panel"><div class="label">欠測チェック</div><div class="value" id="missingStatus">-</div><div class="sub" id="missingStatusSub"></div></div>
+        <div class="card panel"><div class="label">最新潮流</div><div class="value" id="latestSpeed">-</div><div class="sub" id="latestSpeedSub"></div></div>
+      </div>
+      <div class="coord-bar">
+        <span><strong>浜田沖</strong>34.923889°N / 132.013278°E</span>
+        <span><strong>DMS</strong>34°55'26.0"N 132°00'47.8"E</span>
+        <span><strong>用途</strong>Codex移行テスト / GitHub Pages公開確認</span>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="viewerTitle">
+      <div class="section-header">
+        <h2 class="section-title" id="viewerTitle">潮流ビューア</h2>
+      </div>
+      <div class="toolbar" role="group" aria-label="表示期間">
+        <label class="label">表示期間</label>
+        <button class="pill" data-days="7" type="button">直近7日</button>
+        <button class="pill" data-days="14" type="button">直近14日</button>
+        <button class="pill active" data-days="30" type="button">直近30日</button>
+        <button class="pill" data-days="90" type="button">直近90日</button>
+        <button class="pill" data-days="9999" type="button">全期間</button>
+      </div>
+      <div class="toolbar">
+        <label class="label" for="rangeStart">期間指定</label>
+        <input type="date" id="rangeStart" class="date-input">
+        <span class="label">から</span>
+        <input type="date" id="rangeEnd" class="date-input">
+        <button class="btn primary" type="button" id="applyRangeBtn">適用</button>
+        <button class="btn" type="button" id="resetRangeBtn" style="display:none">リセット</button>
+      </div>
+      <div class="charts">
+        <div class="chart-card panel">
+          <div class="chart-label" id="chartLabel1">潮流と水温</div>
+          <div class="chart-box"><canvas id="chartSpeed"></canvas></div>
+        </div>
+        <div class="chart-card panel">
+          <div class="chart-label" id="chartLabel2">塩分</div>
+          <div class="chart-box"><canvas id="chartSalinity"></canvas></div>
+        </div>
+      </div>
+      <div class="table-wrap panel">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align:left">日付</th>
+                <th>流向</th>
+                <th>流速<br>(kn)</th>
+                <th>流速<br>(m/s)</th>
+                <th>水温<br>(℃)</th>
+                <th>塩分<br>(psu)</th>
+              </tr>
+            </thead>
+            <tbody id="dataTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="missingTitle">
+      <div class="section-header">
+        <h2 class="section-title" id="missingTitle">欠測データチェッカー</h2>
+      </div>
+      <div class="panel card">
+        <div class="summary-bar" id="missingSummaryBar"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="mapModal" aria-modal="true" role="dialog" aria-label="浜田沖ポイント地図">
+    <div class="map-inner">
+      <div class="map-header">
+        <h2>浜田沖ポイント</h2>
+        <button class="map-close" type="button" id="mapCloseBtn" aria-label="閉じる">×</button>
+      </div>
+      <div id="mapContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    const TARGET = { name: "浜田沖", lat: 34.923889, lon: 132.013278 };
+    const DIR16 = ["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
+    let allData = [];
+    let currentDays = 30;
+    let customStartDate = null;
+    let customEndDate = null;
+    let chartSpeedInst = null;
+    let chartSalinityInst = null;
+    let mapInstance = null;
+
+    const $ = {};
+    document.addEventListener("DOMContentLoaded", () => {
+      ["headerStatus","fileInput","dropZone","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","rangeEnd","resetRangeBtn","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
+      document.getElementById("reloadBtn").addEventListener("click", () => location.reload());
+      document.getElementById("manualBtn").addEventListener("click", () => $.fileInput.click());
+      document.getElementById("mapBtn").addEventListener("click", openMap);
+      document.getElementById("mapCloseBtn").addEventListener("click", closeMap);
+      document.getElementById("applyRangeBtn").addEventListener("click", applyCustomRange);
+      $.resetRangeBtn.addEventListener("click", clearCustomRange);
+      document.querySelectorAll(".pill[data-days]").forEach(btn => btn.addEventListener("click", () => selectPeriod(btn)));
+      initDropZone();
+      loadDemoData();
+    });
+
+    function initDropZone() {
+      $.fileInput.addEventListener("change", e => {
+        if (e.target.files[0]) readFileObj(e.target.files[0]);
+      });
+      $.dropZone.addEventListener("click", () => $.fileInput.click());
+      $.dropZone.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") $.fileInput.click();
+      });
+      $.dropZone.addEventListener("dragover", e => {
+        e.preventDefault();
+        $.dropZone.classList.add("dragover");
+      });
+      $.dropZone.addEventListener("dragleave", () => $.dropZone.classList.remove("dragover"));
+      $.dropZone.addEventListener("drop", e => {
+        e.preventDefault();
+        $.dropZone.classList.remove("dragover");
+        if (e.dataTransfer.files[0]) readFileObj(e.dataTransfer.files[0]);
+      });
+    }
+
+    function loadDemoData() {
+      const rows = [];
+      const start = new Date(Date.UTC(2026, 0, 1));
+      for (let i = 0; i < 75; i++) {
+        if (i === 21 || i === 47) continue;
+        const d = new Date(start.getTime() + i * 86400000);
+        const date = d.toISOString().slice(0, 10);
+        const speedKn = 0.75 + Math.sin(i / 5) * 0.42 + (i % 9) * 0.035;
+        const temp = 15.2 + Math.sin(i / 12) * 1.3 + i * 0.025;
+        const salinity = 33.85 + Math.cos(i / 10) * 0.18;
+        rows.push({
+          date,
+          speed_kn: round(speedKn, 2),
+          speed_ms: round(speedKn * 0.514444, 3),
+          direction: Math.round((245 + Math.sin(i / 8) * 70 + i * 3) % 360),
+          temp_c: round(temp, 2),
+          salinity: round(salinity, 3)
+        });
+      }
+      allData = rows;
+      $.headerStatus.textContent = "デモデータ表示中";
+      refreshAll("デモデータ");
+    }
+
+    function readFileObj(file) {
+      const reader = new FileReader();
+      reader.onload = e => parseCSV(e.target.result, file.name);
+      reader.readAsText(file, "UTF-8");
+    }
+
+    function parseCSV(text, label) {
+      const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/).filter(Boolean);
+      const headers = lines.shift().split(",").map(h => h.trim());
+      const rows = lines.map(line => {
+        const vals = line.split(",");
+        const row = {};
+        headers.forEach((h, i) => row[h] = (vals[i] || "").trim());
+        return {
+          date: row.date,
+          speed_kn: toNum(row.speed_kn),
+          speed_ms: toNum(row.speed_ms),
+          direction: toNum(row.direction),
+          temp_c: toNum(row.temp_c),
+          salinity: toNum(row.salinity)
+        };
+      }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date));
+      if (!rows.length) {
+        alert("読み込める行がありません。date列を含むCSVか確認してください。");
+        return;
+      }
+      allData = rows.sort((a, b) => a.date.localeCompare(b.date));
+      $.headerStatus.textContent = label;
+      refreshAll(label);
+    }
+
+    function refreshAll(label) {
+      const dates = uniqDates();
+      $.totalRows.textContent = allData.length.toLocaleString();
+      $.totalRowsSub.textContent = label;
+      $.dateFrom.textContent = dates[0] || "-";
+      $.dateTo.textContent = dates[dates.length - 1] || "-";
+      $.totalDays.textContent = dates.length.toLocaleString();
+      if (dates.length) {
+        $.rangeStart.min = $.rangeEnd.min = dates[0];
+        $.rangeStart.max = $.rangeEnd.max = dates[dates.length - 1];
+      }
+      buildDashboard();
+      refreshViewer();
+      buildMissingChecker();
+    }
+
+    function buildDashboard() {
+      const dates = uniqDates();
+      const gaps = getMissingDates(dates);
+      if (gaps.length === 0) {
+        $.missingStatus.textContent = "なし";
+        $.missingStatus.className = "value";
+        $.missingStatusSub.textContent = "日付の連続性OK";
+      } else {
+        $.missingStatus.textContent = `${gaps.length}日`;
+        $.missingStatus.className = "value";
+        $.missingStatusSub.textContent = "欠測候補あり";
+      }
+      const last = allData.find(r => r.date === dates[dates.length - 1]);
+      if (last) {
+        $.latestSpeed.textContent = Number.isFinite(last.speed_kn) ? `${last.speed_kn.toFixed(2)} kn` : "-";
+        $.latestSpeedSub.textContent = Number.isFinite(last.direction) ? `${dirLabel(last.direction)} / ${last.direction.toFixed(0)}°` : "-";
+      }
+    }
+
+    function selectPeriod(btn) {
+      document.querySelectorAll(".pill[data-days]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentDays = parseInt(btn.dataset.days, 10);
+      customStartDate = customEndDate = null;
+      $.resetRangeBtn.style.display = "none";
+      refreshViewer();
+    }
+
+    function applyCustomRange() {
+      const s = $.rangeStart.value;
+      const e = $.rangeEnd.value;
+      if (!s || !e) return alert("開始日と終了日を両方指定してください。");
+      if (s > e) return alert("開始日は終了日以前にしてください。");
+      customStartDate = s;
+      customEndDate = e;
+      document.querySelectorAll(".pill[data-days]").forEach(b => b.classList.remove("active"));
+      $.resetRangeBtn.style.display = "inline-block";
+      refreshViewer();
+    }
+
+    function clearCustomRange() {
+      customStartDate = customEndDate = null;
+      $.rangeStart.value = "";
+      $.rangeEnd.value = "";
+      $.resetRangeBtn.style.display = "none";
+      const def = document.querySelector('.pill[data-days="30"]');
+      if (def) {
+        def.classList.add("active");
+        currentDays = 30;
+      }
+      refreshViewer();
+    }
+
+    function getFiltered() {
+      if (customStartDate && customEndDate) {
+        return allData.filter(r => r.date >= customStartDate && r.date <= customEndDate).sort((a, b) => b.date.localeCompare(a.date));
+      }
+      const show = new Set(uniqDates().slice(-currentDays));
+      return allData.filter(r => show.has(r.date)).sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    function refreshViewer() {
+      renderTable();
+      renderSpeedChart();
+      renderSalinityChart();
+    }
+
+    function renderTable() {
+      const frag = document.createDocumentFragment();
+      getFiltered().forEach(r => {
+        const tr = document.createElement("tr");
+        const speedClass = !Number.isFinite(r.speed_kn) ? "" : r.speed_kn < .5 ? "speed-low" : r.speed_kn < 1.5 ? "speed-mid" : "speed-high";
+        tr.innerHTML =
+          `<td class="date-col">${escapeHtml(r.date.slice(0, 4))}<br>${escapeHtml(r.date.slice(5).replace("-", "/"))}</td>` +
+          `<td><span class="arrow" style="transform:rotate(${Number.isFinite(r.direction) ? r.direction : 0}deg)">↑</span><span class="dir">${fmt(r.direction, 0)}° ${dirLabel(r.direction)}</span></td>` +
+          `<td class="${speedClass}">${fmt(r.speed_kn, 2)}</td>` +
+          `<td>${fmt(r.speed_ms, 3)}</td>` +
+          `<td>${fmt(r.temp_c, 2)}</td>` +
+          `<td>${fmt(r.salinity, 3)}</td>`;
+        frag.appendChild(tr);
+      });
+      $.dataTableBody.textContent = "";
+      $.dataTableBody.appendChild(frag);
+    }
+
+    function renderSpeedChart() {
+      const rows = fillDateGaps(getFiltered().slice().reverse());
+      $.chartLabel1.textContent = `浜田沖 / ${rangeLabel()} / 潮流・水温`;
+      if (chartSpeedInst) chartSpeedInst.destroy();
+      chartSpeedInst = new Chart($.chartSpeed.getContext("2d"), {
+        data: {
+          labels: rows.map(r => r.date.slice(5).replace("-", "/")),
+          datasets: [
+            { type:"line", label:"流速(kn)", data:rows.map(r => finiteOrNull(r.speed_kn)), yAxisID:"ySpeed", borderColor:"#163d63", backgroundColor:"rgba(22,61,99,.08)", borderWidth:2, tension:.28, fill:true, spanGaps:false },
+            { type:"line", label:"水温(℃)", data:rows.map(r => finiteOrNull(r.temp_c)), yAxisID:"yTemp", borderColor:"#c0392b", borderWidth:1.6, borderDash:[4,3], tension:.28, pointRadius:2, spanGaps:false }
+          ]
+        },
+        options: chartOptions("流速(kn)", "水温(℃)")
+      });
+    }
+
+    function renderSalinityChart() {
+      const rows = fillDateGaps(getFiltered().slice().reverse());
+      $.chartLabel2.textContent = `浜田沖 / ${rangeLabel()} / 塩分`;
+      if (chartSalinityInst) chartSalinityInst.destroy();
+      chartSalinityInst = new Chart($.chartSalinity.getContext("2d"), {
+        type: "line",
+        data: {
+          labels: rows.map(r => r.date.slice(5).replace("-", "/")),
+          datasets: [{ label:"塩分(psu)", data:rows.map(r => finiteOrNull(r.salinity)), borderColor:"#16856f", backgroundColor:"rgba(22,133,111,.08)", borderWidth:2, tension:.28, fill:true, spanGaps:false }]
+        },
+        options: {
+          responsive:true,
+          maintainAspectRatio:false,
+          interaction:{mode:"index",intersect:false},
+          plugins:{legend:{labels:{font:{size:11}}}},
+          scales:{y:{title:{display:true,text:"塩分(psu)"}},x:{ticks:{maxTicksLimit:14}}}
+        }
+      });
+    }
+
+    function chartOptions(leftTitle, rightTitle) {
+      return {
+        responsive:true,
+        maintainAspectRatio:false,
+        interaction:{mode:"index",intersect:false},
+        plugins:{legend:{labels:{font:{size:11}}}},
+        scales:{
+          ySpeed:{type:"linear",position:"left",min:0,max:3.5,title:{display:true,text:leftTitle}},
+          yTemp:{type:"linear",position:"right",title:{display:true,text:rightTitle},grid:{drawOnChartArea:false}},
+          x:{ticks:{maxTicksLimit:14}}
+        }
+      };
+    }
+
+    function buildMissingChecker() {
+      const dates = uniqDates();
+      const gaps = getMissingDates(dates);
+      $.missingSummaryBar.textContent = "";
+      $.missingSummaryBar.appendChild(mkPill(gaps.length === 0 ? "ok" : "warn", gaps.length === 0 ? `連続性OK: ${dates.length}日` : `欠測候補: ${gaps.length}日`));
+      gaps.slice(0, 12).forEach(d => $.missingSummaryBar.appendChild(mkPill("warn", d)));
+      if (gaps.length > 12) $.missingSummaryBar.appendChild(mkPill("warn", `ほか ${gaps.length - 12}日`));
+    }
+
+    function openMap() {
+      const modal = document.getElementById("mapModal");
+      modal.classList.add("open");
+      if (!mapInstance) {
+        mapInstance = L.map("mapContainer").setView([TARGET.lat, TARGET.lon], 11);
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { attribution:"&copy; Esri", maxZoom:18 }).addTo(mapInstance);
+        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom:18 }).addTo(mapInstance);
+        L.marker([TARGET.lat, TARGET.lon]).addTo(mapInstance).bindPopup(`<strong>${TARGET.name}</strong><br>${TARGET.lat.toFixed(6)}°N / ${TARGET.lon.toFixed(6)}°E`).openPopup();
+      }
+      setTimeout(() => mapInstance.invalidateSize(), 120);
+      document.addEventListener("keydown", mapEscHandler);
+    }
+
+    function closeMap() {
+      document.getElementById("mapModal").classList.remove("open");
+      document.removeEventListener("keydown", mapEscHandler);
+    }
+
+    function mapEscHandler(e) {
+      if (e.key === "Escape") closeMap();
+    }
+
+    document.addEventListener("click", e => {
+      if (e.target.id === "mapModal") closeMap();
+    });
+
+    function fillDateGaps(ascRows) {
+      if (!ascRows.length) return [];
+      const byDate = new Map(ascRows.map(r => [r.date, r]));
+      const start = Date.parse(ascRows[0].date + "T00:00:00Z");
+      const end = Date.parse(ascRows[ascRows.length - 1].date + "T00:00:00Z");
+      const out = [];
+      for (let t = start; t <= end; t += 86400000) {
+        const key = new Date(t).toISOString().slice(0, 10);
+        out.push(byDate.get(key) || { date:key, speed_kn:NaN, speed_ms:NaN, direction:NaN, temp_c:NaN, salinity:NaN });
+      }
+      return out;
+    }
+
+    function uniqDates() {
+      return [...new Set(allData.map(r => r.date))].sort();
+    }
+
+    function getMissingDates(sorted) {
+      const miss = [];
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = Date.parse(sorted[i - 1] + "T00:00:00Z");
+        const next = Date.parse(sorted[i] + "T00:00:00Z");
+        for (let t = prev + 86400000; t < next; t += 86400000) {
+          miss.push(new Date(t).toISOString().slice(0, 10));
+        }
+      }
+      return miss;
+    }
+
+    function dirLabel(deg) {
+      if (!Number.isFinite(deg)) return "-";
+      return DIR16[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+    }
+
+    function rangeLabel() {
+      if (customStartDate && customEndDate) return `${customStartDate} - ${customEndDate}`;
+      return currentDays >= 9999 ? "全期間" : `直近${currentDays}日`;
+    }
+
+    function mkPill(type, text) {
+      const span = document.createElement("span");
+      span.className = `summary-pill ${type}`;
+      span.textContent = text;
+      return span;
+    }
+
+    function toNum(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    function finiteOrNull(v) {
+      return Number.isFinite(v) ? v : null;
+    }
+
+    function fmt(v, digits) {
+      return Number.isFinite(v) ? v.toFixed(digits) : "-";
+    }
+
+    function round(v, digits) {
+      const m = 10 ** digits;
+      return Math.round(v * m) / m;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+    }
+  </script>
+</body>
+</html>
