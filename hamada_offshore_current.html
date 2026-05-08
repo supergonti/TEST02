@@ -39,6 +39,7 @@
     .pill{border:1px solid #c5d5ea;border-radius:18px;background:#fff;color:#4c5b68;padding:5px 13px;font-size:.8rem;cursor:pointer}
     .pill.active{background:#163d63;border-color:#163d63;color:#fff}
     .date-input{border:1px solid #c5d5ea;border-radius:6px;padding:4px 8px;font-size:.8rem;color:#34495e;background:#fff}
+    .period-select{border:1px solid #c5d5ea;border-radius:6px;background:#fff;color:#34495e;padding:4px 34px 4px 10px;font-size:.86rem}
     .charts{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
     .chart-card{padding:14px}
     .chart-label{font-size:.8rem;color:#6b7b8a;margin-bottom:8px}
@@ -131,21 +132,18 @@
       <div class="section-header">
         <h2 class="section-title" id="viewerTitle">潮流ビューア</h2>
       </div>
-      <div class="toolbar" role="group" aria-label="表示期間">
-        <label class="label">表示期間</label>
-        <button class="pill" data-days="7" type="button">直近7日</button>
-        <button class="pill" data-days="14" type="button">直近14日</button>
-        <button class="pill active" data-days="30" type="button">直近30日</button>
-        <button class="pill" data-days="90" type="button">直近90日</button>
-        <button class="pill" data-days="9999" type="button">全期間</button>
-      </div>
-      <div class="toolbar">
-        <label class="label" for="rangeStart">期間指定</label>
-        <input type="date" id="rangeStart" class="date-input">
-        <span class="label">から</span>
-        <input type="date" id="rangeEnd" class="date-input">
-        <button class="btn primary" type="button" id="applyRangeBtn">適用</button>
-        <button class="btn" type="button" id="resetRangeBtn" style="display:none">リセット</button>
+      <div class="toolbar" role="group" aria-label="基準日から以前の表示期間">
+        <input type="date" id="rangeStart" class="date-input" aria-label="基準日">
+        <span class="label">から以前の</span>
+        <label class="label" for="periodSelect">期間表示：</label>
+        <select id="periodSelect" class="period-select" aria-label="表示期間">
+          <option value="7">7日</option>
+          <option value="14">14日</option>
+          <option value="30">30日</option>
+          <option value="90">90日</option>
+          <option value="365" selected>1年</option>
+          <option value="9999">全期間</option>
+        </select>
       </div>
       <div class="charts">
         <div class="chart-card panel">
@@ -200,23 +198,22 @@
     const TARGET = { name: "浜田沖", lat: 34.923889, lon: 132.013278 };
     const DIR16 = ["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
     let allData = [];
-    let currentDays = 30;
-    let customStartDate = null;
-    let customEndDate = null;
+    let currentDays = 365;
+    let anchorDate = null;
     let chartSpeedInst = null;
     let chartSalinityInst = null;
     let mapInstance = null;
+    const arrowCache = {};
 
     const $ = {};
     document.addEventListener("DOMContentLoaded", () => {
-      ["headerStatus","fileInput","dropZone","dataNotice","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","rangeEnd","resetRangeBtn","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
+      ["headerStatus","fileInput","dropZone","dataNotice","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","periodSelect","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
       document.getElementById("reloadBtn").addEventListener("click", () => location.reload());
       document.getElementById("manualBtn").addEventListener("click", () => $.fileInput.click());
       document.getElementById("mapBtn").addEventListener("click", openMap);
       document.getElementById("mapCloseBtn").addEventListener("click", closeMap);
-      document.getElementById("applyRangeBtn").addEventListener("click", applyCustomRange);
-      $.resetRangeBtn.addEventListener("click", clearCustomRange);
-      document.querySelectorAll(".pill[data-days]").forEach(btn => btn.addEventListener("click", () => selectPeriod(btn)));
+      $.rangeStart.addEventListener("change", updatePeriodFromControls);
+      $.periodSelect.addEventListener("change", updatePeriodFromControls);
       initDropZone();
       autoLoadRealData();
     });
@@ -323,8 +320,12 @@
       $.dateTo.textContent = dates[dates.length - 1] || "-";
       $.totalDays.textContent = dates.length.toLocaleString();
       if (dates.length) {
-        $.rangeStart.min = $.rangeEnd.min = dates[0];
-        $.rangeStart.max = $.rangeEnd.max = dates[dates.length - 1];
+        $.rangeStart.min = dates[0];
+        $.rangeStart.max = dates[dates.length - 1];
+        if (!anchorDate || anchorDate < dates[0] || anchorDate > dates[dates.length - 1]) {
+          anchorDate = dates[dates.length - 1];
+          $.rangeStart.value = anchorDate;
+        }
       }
       buildDashboard();
       refreshViewer();
@@ -350,46 +351,23 @@
       }
     }
 
-    function selectPeriod(btn) {
-      document.querySelectorAll(".pill[data-days]").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentDays = parseInt(btn.dataset.days, 10);
-      customStartDate = customEndDate = null;
-      $.resetRangeBtn.style.display = "none";
-      refreshViewer();
-    }
-
-    function applyCustomRange() {
-      const s = $.rangeStart.value;
-      const e = $.rangeEnd.value;
-      if (!s || !e) return alert("開始日と終了日を両方指定してください。");
-      if (s > e) return alert("開始日は終了日以前にしてください。");
-      customStartDate = s;
-      customEndDate = e;
-      document.querySelectorAll(".pill[data-days]").forEach(b => b.classList.remove("active"));
-      $.resetRangeBtn.style.display = "inline-block";
-      refreshViewer();
-    }
-
-    function clearCustomRange() {
-      customStartDate = customEndDate = null;
-      $.rangeStart.value = "";
-      $.rangeEnd.value = "";
-      $.resetRangeBtn.style.display = "none";
-      const def = document.querySelector('.pill[data-days="30"]');
-      if (def) {
-        def.classList.add("active");
-        currentDays = 30;
-      }
+    function updatePeriodFromControls() {
+      anchorDate = $.rangeStart.value || uniqDates().slice(-1)[0] || null;
+      currentDays = parseInt($.periodSelect.value, 10);
       refreshViewer();
     }
 
     function getFiltered() {
-      if (customStartDate && customEndDate) {
-        return allData.filter(r => r.date >= customStartDate && r.date <= customEndDate).sort((a, b) => b.date.localeCompare(a.date));
+      const dates = uniqDates();
+      const end = anchorDate || dates[dates.length - 1];
+      if (!end) return [];
+      let start = dates[0];
+      if (currentDays < 9999) {
+        start = shiftDate(end, -(currentDays - 1));
       }
-      const show = new Set(uniqDates().slice(-currentDays));
-      return allData.filter(r => show.has(r.date)).sort((a, b) => b.date.localeCompare(a.date));
+      return allData
+        .filter(r => r.date >= start && r.date <= end)
+        .sort((a, b) => b.date.localeCompare(a.date));
     }
 
     function refreshViewer() {
@@ -419,12 +397,15 @@
     function renderSpeedChart() {
       const rows = fillDateGaps(getFiltered().slice().reverse());
       $.chartLabel1.textContent = `浜田沖 / ${rangeLabel()} / 潮流・水温`;
+      const arrowSize = rows.length <= 14 ? 40 : rows.length <= 45 ? 34 : 28;
+      const arrowRadius = rows.length <= 14 ? 12 : rows.length <= 45 ? 10 : 8;
+      const arrowPts = rows.map(r => getArrowCanvas(Number.isFinite(r.direction) ? r.direction : 0, arrowSize));
       if (chartSpeedInst) chartSpeedInst.destroy();
       chartSpeedInst = new Chart($.chartSpeed.getContext("2d"), {
         data: {
           labels: rows.map(r => r.date.slice(5).replace("-", "/")),
           datasets: [
-            { type:"line", label:"流速(kn)", data:rows.map(r => finiteOrNull(r.speed_kn)), yAxisID:"ySpeed", borderColor:"#163d63", backgroundColor:"rgba(22,61,99,.08)", borderWidth:2, tension:.28, fill:true, spanGaps:false },
+            { type:"line", label:"流速(kn)", data:rows.map(r => finiteOrNull(r.speed_kn)), yAxisID:"ySpeed", borderColor:"#163d63", backgroundColor:"rgba(22,61,99,.08)", borderWidth:2, pointStyle:arrowPts, pointRadius:arrowRadius, pointHoverRadius:arrowRadius+2, hitRadius:arrowRadius+4, tension:.28, fill:true, spanGaps:false },
             { type:"line", label:"水温(℃)", data:rows.map(r => finiteOrNull(r.temp_c)), yAxisID:"yTemp", borderColor:"#c0392b", borderWidth:1.6, borderDash:[4,3], tension:.28, pointRadius:2, spanGaps:false }
           ]
         },
@@ -536,8 +517,43 @@
     }
 
     function rangeLabel() {
-      if (customStartDate && customEndDate) return `${customStartDate} - ${customEndDate}`;
-      return currentDays >= 9999 ? "全期間" : `直近${currentDays}日`;
+      const label = currentDays === 365 ? "1年" : currentDays >= 9999 ? "全期間" : `${currentDays}日`;
+      return anchorDate ? `${anchorDate} から以前 / ${label}` : label;
+    }
+
+    function shiftDate(ymd, deltaDays) {
+      const [y, m, d] = ymd.split("-").map(Number);
+      const t = Date.UTC(y, m - 1, d) + deltaDays * 86400000;
+      return new Date(t).toISOString().slice(0, 10);
+    }
+
+    function getArrowCanvas(deg, size) {
+      const roundedDeg = ((Math.round(deg / 10) * 10) % 360 + 360) % 360;
+      const key = `${roundedDeg}_${size}`;
+      if (arrowCache[key]) return arrowCache[key];
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.translate(size / 2, size / 2);
+      ctx.rotate(roundedDeg * Math.PI / 180);
+      const tip = -size * .36;
+      const head = -size * .08;
+      const tail = size * .35;
+      const halfHead = size * .15;
+      const halfTail = size * .035;
+      ctx.beginPath();
+      ctx.moveTo(0, tip);
+      ctx.lineTo(halfHead, head);
+      ctx.lineTo(halfTail, head);
+      ctx.lineTo(halfTail, tail);
+      ctx.lineTo(-halfTail, tail);
+      ctx.lineTo(-halfTail, head);
+      ctx.lineTo(-halfHead, head);
+      ctx.closePath();
+      ctx.fillStyle = "#163d63";
+      ctx.fill();
+      arrowCache[key] = canvas;
+      return canvas;
     }
 
     function mkPill(type, text) {
