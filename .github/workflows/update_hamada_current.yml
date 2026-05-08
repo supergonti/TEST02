@@ -10,6 +10,14 @@ on:
         description: "Fetch one date, e.g. 2026-05-07. Empty means yesterday JST."
         required: false
         default: ""
+      start_date:
+        description: "Fetch a date range start, e.g. 2026-02-07. Use with end_date."
+        required: false
+        default: ""
+      end_date:
+        description: "Fetch a date range end, e.g. 2026-05-07. Use with start_date."
+        required: false
+        default: ""
       collect_all:
         description: "Set true only when rebuilding all data from 2022-01-01."
         required: false
@@ -45,6 +53,8 @@ jobs:
           set -o pipefail
           if [ "${{ github.event.inputs.collect_all }}" = "true" ]; then
             python scripts/update_hamada_current.py --all 2>&1 | tee /tmp/hamada-current.log
+          elif [ -n "${{ github.event.inputs.start_date }}" ] || [ -n "${{ github.event.inputs.end_date }}" ]; then
+            python scripts/update_hamada_current.py --start "${{ github.event.inputs.start_date }}" --end "${{ github.event.inputs.end_date }}" 2>&1 | tee /tmp/hamada-current.log
           elif [ -n "${{ github.event.inputs.target_date }}" ]; then
             python scripts/update_hamada_current.py --date "${{ github.event.inputs.target_date }}" 2>&1 | tee /tmp/hamada-current.log
           else
