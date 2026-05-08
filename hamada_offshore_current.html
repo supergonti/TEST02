@@ -96,9 +96,10 @@
   </header>
 
   <main>
-    <div class="notice panel">
-      GitHub Pages で単体確認できるよう、初期状態ではデモデータを表示します。実データ CSV を読み込むと表示が切り替わります。
-      CSV列は <strong>date,speed_kn,speed_ms,direction,temp_c,salinity</strong> を想定しています。
+    <div class="notice panel" id="dataNotice">
+      起動時に <strong>data/hamada_offshore_current_all.csv</strong> を読み込みます。
+      CSV がまだ公開されていない場合だけ、動作確認用デモデータを表示します。
+      CSV列は <strong>date,speed_kn,speed_ms,direction,temp_c,salinity</strong>、または室戸版と同じ <strong>date,point,lat,lon,u_ms,v_ms,speed_ms,speed_kn,direction,temp_c,salinity</strong> に対応します。
     </div>
 
     <div id="dropZone" role="button" tabindex="0">
@@ -208,7 +209,7 @@
 
     const $ = {};
     document.addEventListener("DOMContentLoaded", () => {
-      ["headerStatus","fileInput","dropZone","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","rangeEnd","resetRangeBtn","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
+      ["headerStatus","fileInput","dropZone","dataNotice","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","rangeEnd","resetRangeBtn","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
       document.getElementById("reloadBtn").addEventListener("click", () => location.reload());
       document.getElementById("manualBtn").addEventListener("click", () => $.fileInput.click());
       document.getElementById("mapBtn").addEventListener("click", openMap);
@@ -217,7 +218,7 @@
       $.resetRangeBtn.addEventListener("click", clearCustomRange);
       document.querySelectorAll(".pill[data-days]").forEach(btn => btn.addEventListener("click", () => selectPeriod(btn)));
       initDropZone();
-      loadDemoData();
+      autoLoadRealData();
     });
 
     function initDropZone() {
@@ -240,7 +241,21 @@
       });
     }
 
-    function loadDemoData() {
+    async function autoLoadRealData() {
+      const csvUrl = "data/hamada_offshore_current_all.csv";
+      $.headerStatus.textContent = "実データ確認中";
+      try {
+        const response = await fetch(`${csvUrl}?v=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const text = await response.text();
+        parseCSV(text, "実データ: hamada_offshore_current_all.csv");
+        $.dataNotice.innerHTML = `実データ <strong>${csvUrl}</strong> を表示しています。CSVを選択すると手元のデータで上書き確認できます。`;
+      } catch (error) {
+        loadDemoData(`公開CSV未検出: ${csvUrl}`);
+      }
+    }
+
+    function loadDemoData(reason) {
       const rows = [];
       const start = new Date(Date.UTC(2026, 0, 1));
       for (let i = 0; i < 75; i++) {
@@ -261,6 +276,7 @@
       }
       allData = rows;
       $.headerStatus.textContent = "デモデータ表示中";
+      $.dataNotice.innerHTML = `${escapeHtml(reason || "実データCSV未検出")} のため、動作確認用デモデータを表示しています。本物データを使うには <strong>data/hamada_offshore_current_all.csv</strong> を追加してください。`;
       refreshAll("デモデータ");
     }
 
@@ -279,13 +295,17 @@
         headers.forEach((h, i) => row[h] = (vals[i] || "").trim());
         return {
           date: row.date,
+          point: row.point || TARGET.name,
+          lat: toNum(row.lat),
+          lon: toNum(row.lon),
           speed_kn: toNum(row.speed_kn),
           speed_ms: toNum(row.speed_ms),
           direction: toNum(row.direction),
           temp_c: toNum(row.temp_c),
           salinity: toNum(row.salinity)
         };
-      }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date));
+      }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date))
+        .filter(r => !r.point || r.point === TARGET.name || nearTarget(r.lat, r.lon));
       if (!rows.length) {
         alert("読み込める行がありません。date列を含むCSVか確認してください。");
         return;
@@ -530,6 +550,11 @@
     function toNum(v) {
       const n = Number(v);
       return Number.isFinite(n) ? n : NaN;
+    }
+
+    function nearTarget(lat, lon) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+      return Math.abs(lat - TARGET.lat) <= 0.15 && Math.abs(lon - TARGET.lon) <= 0.15;
     }
 
     function finiteOrNull(v) {
