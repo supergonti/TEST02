@@ -102,17 +102,6 @@
   </header>
 
   <main>
-    <div class="notice panel" id="dataNotice">
-      起動時に <strong>data/hamada_offshore_current_all.csv</strong> を読み込みます。
-      CSV がまだ公開されていない場合だけ、動作確認用デモデータを表示します。
-      CSV列は <strong>date,speed_kn,speed_ms,direction,temp_c,salinity</strong>、または室戸版と同じ <strong>date,point,lat,lon,u_ms,v_ms,speed_ms,speed_kn,direction,temp_c,salinity</strong> に対応します。
-    </div>
-
-    <div id="dropZone" role="button" tabindex="0">
-      <strong>CSVをドラッグ＆ドロップ</strong> またはクリックして選択<br>
-      <small>対象例: hamada_offshore_current_all.csv</small>
-    </div>
-
     <section class="section" aria-labelledby="dashboardTitle">
       <div class="section-header" role="button" tabindex="0" aria-expanded="false" aria-controls="dashboardBody" data-section="dashboard">
         <h2 class="section-title" id="dashboardTitle">ダッシュボード</h2>
@@ -196,6 +185,24 @@
         </div>
       </div>
     </section>
+
+    <section class="section" aria-labelledby="dataLoadTitle">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="false" aria-controls="dataLoadBody" data-section="dataLoad">
+        <h2 class="section-title" id="dataLoadTitle">データ読み込み</h2>
+        <span class="toggle-btn"><span class="toggle-arrow" id="dataLoadArrow">▶</span><span id="dataLoadToggleLabel">展開する</span></span>
+      </div>
+      <div class="section-body collapsed" id="dataLoadBody">
+        <div class="notice panel" id="dataNotice">
+          起動時に <strong>data/hamada_offshore_current_all.csv</strong> を読み込みます。
+          CSV がまだ公開されていない場合だけ、動作確認用デモデータを表示します。
+          CSV列は <strong>date,speed_kn,speed_ms,direction,temp_c,salinity</strong>、または室戸版と同じ <strong>date,point,lat,lon,u_ms,v_ms,speed_ms,speed_kn,direction,temp_c,salinity</strong> に対応します。
+        </div>
+        <div id="dropZone" role="button" tabindex="0">
+          <strong>CSVをドラッグ＆ドロップ</strong> またはクリックして選択<br>
+          <small>対象例: hamada_offshore_current_all.csv</small>
+        </div>
+      </div>
+    </section>
   </main>
 
   <div id="mapModal" aria-modal="true" role="dialog" aria-label="浜田沖ポイント地図">
@@ -218,7 +225,7 @@
     let chartSalinityInst = null;
     let mapInstance = null;
     const arrowCache = {};
-    const sectionOpen = { dashboard: false, viewer: true, missing: true };
+    const sectionOpen = { dashboard: false, viewer: true, missing: true, dataLoad: false };
 
     const $ = {};
     document.addEventListener("DOMContentLoaded", () => {
