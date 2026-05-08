@@ -43,6 +43,7 @@ DATASET_MY = "cmems_mod_glo_phy_my_0.083deg_P1D-m"
 DATASET_AFC_CUR = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"
 DATASET_AFC_TMP = "cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m"
 DATASET_AFC_SAL = "cmems_mod_glo_phy-so_anfc_0.083deg_P1D-m"
+FORECAST_START = date(2026, 1, 1)
 
 COLUMNS = [
     "date",
@@ -71,13 +72,13 @@ def date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range(days + 1)]
 
 
-def cmems_subset(dataset_id: str, variables: list[str], target: Target, target_date: date) -> xr.Dataset:
+def cmems_subset(dataset_id: str, variables: list[str], target: Target, start: date, end: date) -> xr.Dataset:
     bbox = 0.12
     return cm.open_dataset(
         dataset_id=dataset_id,
         variables=variables,
-        start_datetime=f"{target_date.isoformat()}T00:00:00",
-        end_datetime=f"{target_date.isoformat()}T23:59:59",
+        start_datetime=f"{start.isoformat()}T00:00:00",
+        end_datetime=f"{end.isoformat()}T23:59:59",
         minimum_longitude=target.lon - bbox,
         maximum_longitude=target.lon + bbox,
         minimum_latitude=target.lat - bbox,
@@ -104,14 +105,21 @@ def normalize_dataset(ds: xr.Dataset) -> xr.Dataset:
     return ds.rename(rename) if rename else ds
 
 
-def merge_daily_dataset(target: Target, target_date: date) -> xr.Dataset:
-    if target_date <= date(2025, 12, 31):
-        return normalize_dataset(cmems_subset(DATASET_MY, ["uo", "vo", "thetao", "so"], target, target_date))
+def merge_period_dataset(target: Target, dates: list[date]) -> xr.Dataset:
+    start = min(dates)
+    end = max(dates)
+    if end < FORECAST_START:
+        print(f"[open] {target.name} {start}..{end} reanalysis")
+        return normalize_dataset(cmems_subset(DATASET_MY, ["uo", "vo", "thetao", "so"], target, start, end))
 
+    if start < FORECAST_START:
+        raise ValueError("Date ranges crossing 2025-12-31 must be split before fetching")
+
+    print(f"[open] {target.name} {start}..{end} analysis/forecast")
     parts = [
-        cmems_subset(DATASET_AFC_CUR, ["uo", "vo"], target, target_date),
-        cmems_subset(DATASET_AFC_TMP, ["thetao"], target, target_date),
-        cmems_subset(DATASET_AFC_SAL, ["so"], target, target_date),
+        cmems_subset(DATASET_AFC_CUR, ["uo", "vo"], target, start, end),
+        cmems_subset(DATASET_AFC_TMP, ["thetao"], target, start, end),
+        cmems_subset(DATASET_AFC_SAL, ["so"], target, start, end),
     ]
     try:
         return normalize_dataset(xr.merge(parts, compat="override"))
@@ -120,20 +128,27 @@ def merge_daily_dataset(target: Target, target_date: date) -> xr.Dataset:
             ds.close()
 
 
-def nearest_value(ds: xr.Dataset, var_name: str, target: Target) -> float:
+def split_by_dataset(dates: list[date]) -> list[list[date]]:
+    old_dates = [d for d in dates if d < FORECAST_START]
+    new_dates = [d for d in dates if d >= FORECAST_START]
+    return [group for group in (old_dates, new_dates) if group]
+
+
+def nearest_value(ds: xr.Dataset, var_name: str, target: Target, target_date: date) -> float:
     if var_name not in ds:
         return float("nan")
 
     da = ds[var_name]
-    selection = {}
-    for dim in da.dims:
-        if dim == "time":
-            selection[dim] = 0
-        elif dim == "depth":
-            selection[dim] = 0
+    if "time" in da.dims:
+        dates = pd.to_datetime(da["time"].values).date
+        matches = np.where(dates == target_date)[0]
+        if len(matches):
+            da = da.isel(time=int(matches[0]))
+        else:
+            da = da.sel(time=np.datetime64(target_date.isoformat()), method="nearest")
 
-    if selection:
-        da = da.isel(**selection)
+    if "depth" in da.dims:
+        da = da.isel(depth=0)
 
     if "lat" in da.dims and "lon" in da.dims:
         da = da.sel(lat=target.lat, lon=target.lon, method="nearest")
@@ -160,28 +175,36 @@ def rounded(value: float, digits: int) -> float | None:
     return round(value, digits) if math.isfinite(value) else None
 
 
-def fetch_day(target: Target, target_date: date) -> dict:
-    print(f"[fetch] {target_date.isoformat()} {target.name}")
-    ds = merge_daily_dataset(target, target_date)
-    try:
-        u = nearest_value(ds, "u", target)
-        v = nearest_value(ds, "v", target)
-        spd_ms = speed_ms(u, v)
-        return {
-            "date": target_date.isoformat(),
-            "point": target.name,
-            "lat": target.lat,
-            "lon": target.lon,
-            "u_ms": rounded(u, 4),
-            "v_ms": rounded(v, 4),
-            "speed_ms": rounded(spd_ms, 4),
-            "speed_kn": rounded(spd_ms * 1.944, 4),
-            "direction": rounded(direction_deg(u, v), 1),
-            "temp_c": rounded(nearest_value(ds, "temp", target), 2),
-            "salinity": rounded(nearest_value(ds, "salt", target), 3),
-        }
-    finally:
-        ds.close()
+def row_from_dataset(ds: xr.Dataset, target: Target, target_date: date) -> dict:
+    u = nearest_value(ds, "u", target, target_date)
+    v = nearest_value(ds, "v", target, target_date)
+    spd_ms = speed_ms(u, v)
+    return {
+        "date": target_date.isoformat(),
+        "point": target.name,
+        "lat": target.lat,
+        "lon": target.lon,
+        "u_ms": rounded(u, 4),
+        "v_ms": rounded(v, 4),
+        "speed_ms": rounded(spd_ms, 4),
+        "speed_kn": rounded(spd_ms * 1.944, 4),
+        "direction": rounded(direction_deg(u, v), 1),
+        "temp_c": rounded(nearest_value(ds, "temp", target, target_date), 2),
+        "salinity": rounded(nearest_value(ds, "salt", target, target_date), 3),
+    }
+
+
+def fetch_rows(target: Target, dates: list[date]) -> list[dict]:
+    rows: list[dict] = []
+    for group in split_by_dataset(dates):
+        ds = merge_period_dataset(target, group)
+        try:
+            for d in group:
+                print(f"[extract] {d.isoformat()} {target.name}")
+                rows.append(row_from_dataset(ds, target, d))
+        finally:
+            ds.close()
+    return rows
 
 
 def existing_keys(path: Path) -> set[tuple[str, str]]:
@@ -239,13 +262,12 @@ def main() -> int:
 
     done = set() if args.no_skip else existing_keys(output_path)
     rows = []
-    for d in dates:
-        for target in TARGETS:
-            key = (d.isoformat(), target.name)
-            if key in done:
-                print(f"[skip] {d.isoformat()} {target.name} already exists")
-                continue
-            rows.append(fetch_day(target, d))
+    for target in TARGETS:
+        missing = [d for d in dates if (d.isoformat(), target.name) not in done]
+        if not missing:
+            print(f"[ok] {target.name}: no new dates to fetch")
+            continue
+        rows.extend(fetch_rows(target, missing))
 
     if rows:
         save_rows(rows, output_path)
