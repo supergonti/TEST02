@@ -18,5 +18,13 @@ Real data:
   - `date,speed_kn,speed_ms,direction,temp_c,salinity`
   - `date,point,lat,lon,u_ms,v_ms,speed_ms,speed_kn,direction,temp_c,salinity`
 
+Daily update on GitHub:
+- `.github/workflows/update_hamada_current.yml` runs every day at 06:30 JST.
+- It fetches Hamada offshore data from Copernicus Marine and commits `data/hamada_offshore_current_all.csv`.
+- Required GitHub repository secrets:
+  - `CMEMS_USERNAME`
+  - `CMEMS_PASSWORD`
+- Manual run is available from GitHub Actions. Use `target_date` for one day, or `collect_all=true` only for a full rebuild.
+
 Reference:
 - C:\Dev\fishing-system Muroto\muroto_offshore_current.html
