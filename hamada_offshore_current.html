@@ -25,8 +25,13 @@
     .panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
     .notice{padding:12px 14px;margin-bottom:16px;background:#fffdf4;border-left:4px solid #d89922;color:#5c4a20;font-size:.86rem;line-height:1.6}
     .section{margin-bottom:22px}
-    .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:7px;border-bottom:2px solid #c5d5ea}
+    .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:7px;border-bottom:2px solid #c5d5ea;cursor:pointer;user-select:none}
+    .section-header:hover .section-title{color:#24547f}
     .section-title{font-size:1rem;color:#163d63;font-weight:700}
+    .toggle-btn{background:transparent;border:0;color:#6b7b8a;display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer;padding:2px 6px}
+    .toggle-arrow{display:inline-block;transition:transform .2s ease}
+    .section-body{overflow:hidden;transition:max-height .28s ease,opacity .22s ease;max-height:2600px;opacity:1}
+    .section-body.collapsed{max-height:0!important;opacity:0;margin:0}
     .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:11px}
     .card{padding:15px 16px}
     .label{font-size:.74rem;color:#748494;margin-bottom:5px}
@@ -109,77 +114,86 @@
     </div>
 
     <section class="section" aria-labelledby="dashboardTitle">
-      <div class="section-header">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="false" aria-controls="dashboardBody" data-section="dashboard">
         <h2 class="section-title" id="dashboardTitle">ダッシュボード</h2>
-        <button class="btn" type="button" id="mapBtn">地図を開く</button>
+        <span class="toggle-btn"><span class="toggle-arrow" id="dashboardArrow">▶</span><span id="dashboardToggleLabel">展開する</span></span>
       </div>
-      <div class="card-grid">
-        <div class="card panel"><div class="label">データ件数</div><div class="value" id="totalRows">-</div><div class="sub" id="totalRowsSub"></div></div>
-        <div class="card panel"><div class="label">開始日</div><div class="value small" id="dateFrom">-</div></div>
-        <div class="card panel"><div class="label">最終日</div><div class="value small" id="dateTo">-</div></div>
-        <div class="card panel"><div class="label">日数</div><div class="value" id="totalDays">-</div><div class="sub">日間</div></div>
-        <div class="card panel"><div class="label">欠測チェック</div><div class="value" id="missingStatus">-</div><div class="sub" id="missingStatusSub"></div></div>
-        <div class="card panel"><div class="label">最新潮流</div><div class="value" id="latestSpeed">-</div><div class="sub" id="latestSpeedSub"></div></div>
-      </div>
-      <div class="coord-bar">
-        <span><strong>浜田沖</strong>34.923889°N / 132.013278°E</span>
-        <span><strong>DMS</strong>34°55'26.0"N 132°00'47.8"E</span>
-        <span><strong>用途</strong>Codex移行テスト / GitHub Pages公開確認</span>
+      <div class="section-body collapsed" id="dashboardBody">
+        <div class="card-grid">
+          <div class="card panel"><div class="label">データ件数</div><div class="value" id="totalRows">-</div><div class="sub" id="totalRowsSub"></div></div>
+          <div class="card panel"><div class="label">開始日</div><div class="value small" id="dateFrom">-</div></div>
+          <div class="card panel"><div class="label">最終日</div><div class="value small" id="dateTo">-</div></div>
+          <div class="card panel"><div class="label">日数</div><div class="value" id="totalDays">-</div><div class="sub">日間</div></div>
+          <div class="card panel"><div class="label">欠測チェック</div><div class="value" id="missingStatus">-</div><div class="sub" id="missingStatusSub"></div></div>
+          <div class="card panel"><div class="label">最新潮流</div><div class="value" id="latestSpeed">-</div><div class="sub" id="latestSpeedSub"></div></div>
+        </div>
+        <div class="coord-bar">
+          <span><strong>浜田沖</strong>34.923889°N / 132.013278°E</span>
+          <span><strong>DMS</strong>34°55'26.0"N 132°00'47.8"E</span>
+          <span><strong>用途</strong>Codex移行テスト / GitHub Pages公開確認</span>
+          <button class="btn" type="button" id="mapBtn">地図を開く</button>
+        </div>
       </div>
     </section>
 
     <section class="section" aria-labelledby="viewerTitle">
-      <div class="section-header">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="true" aria-controls="viewerBody" data-section="viewer">
         <h2 class="section-title" id="viewerTitle">潮流ビューア</h2>
+        <span class="toggle-btn"><span class="toggle-arrow" id="viewerArrow">▼</span><span id="viewerToggleLabel">折りたたむ</span></span>
       </div>
-      <div class="toolbar" role="group" aria-label="基準日から以前の表示期間">
-        <input type="date" id="rangeStart" class="date-input" aria-label="基準日">
-        <span class="label">から以前の</span>
-        <label class="label" for="periodSelect">期間表示：</label>
-        <select id="periodSelect" class="period-select" aria-label="表示期間">
-          <option value="7">7日</option>
-          <option value="14">14日</option>
-          <option value="30">30日</option>
-          <option value="90">90日</option>
-          <option value="365" selected>1年</option>
-          <option value="9999">全期間</option>
-        </select>
-      </div>
-      <div class="charts">
-        <div class="chart-card panel">
-          <div class="chart-label" id="chartLabel1">潮流と水温</div>
-          <div class="chart-box"><canvas id="chartSpeed"></canvas></div>
+      <div class="section-body" id="viewerBody">
+        <div class="toolbar" role="group" aria-label="基準日から以前の表示期間">
+          <input type="date" id="rangeStart" class="date-input" aria-label="基準日">
+          <span class="label">から以前の</span>
+          <label class="label" for="periodSelect">期間表示：</label>
+          <select id="periodSelect" class="period-select" aria-label="表示期間">
+            <option value="7">7日</option>
+            <option value="14">14日</option>
+            <option value="30">30日</option>
+            <option value="90">90日</option>
+            <option value="365" selected>1年</option>
+            <option value="9999">全期間</option>
+          </select>
         </div>
-        <div class="chart-card panel">
-          <div class="chart-label" id="chartLabel2">塩分</div>
-          <div class="chart-box"><canvas id="chartSalinity"></canvas></div>
+        <div class="charts">
+          <div class="chart-card panel">
+            <div class="chart-label" id="chartLabel1">潮流と水温</div>
+            <div class="chart-box"><canvas id="chartSpeed"></canvas></div>
+          </div>
+          <div class="chart-card panel">
+            <div class="chart-label" id="chartLabel2">塩分</div>
+            <div class="chart-box"><canvas id="chartSalinity"></canvas></div>
+          </div>
         </div>
-      </div>
-      <div class="table-wrap panel">
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th style="text-align:left">日付</th>
-                <th>流向</th>
-                <th>流速<br>(kn)</th>
-                <th>流速<br>(m/s)</th>
-                <th>水温<br>(℃)</th>
-                <th>塩分<br>(psu)</th>
-              </tr>
-            </thead>
-            <tbody id="dataTableBody"></tbody>
-          </table>
+        <div class="table-wrap panel">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th style="text-align:left">日付</th>
+                  <th>流向</th>
+                  <th>流速<br>(kn)</th>
+                  <th>流速<br>(m/s)</th>
+                  <th>水温<br>(℃)</th>
+                  <th>塩分<br>(psu)</th>
+                </tr>
+              </thead>
+              <tbody id="dataTableBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="section" aria-labelledby="missingTitle">
-      <div class="section-header">
+      <div class="section-header" role="button" tabindex="0" aria-expanded="true" aria-controls="missingBody" data-section="missing">
         <h2 class="section-title" id="missingTitle">欠測データチェッカー</h2>
+        <span class="toggle-btn"><span class="toggle-arrow" id="missingArrow">▼</span><span id="missingToggleLabel">折りたたむ</span></span>
       </div>
-      <div class="panel card">
-        <div class="summary-bar" id="missingSummaryBar"></div>
+      <div class="section-body" id="missingBody">
+        <div class="panel card">
+          <div class="summary-bar" id="missingSummaryBar"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -204,6 +218,7 @@
     let chartSalinityInst = null;
     let mapInstance = null;
     const arrowCache = {};
+    const sectionOpen = { dashboard: false, viewer: true, missing: true };
 
     const $ = {};
     document.addEventListener("DOMContentLoaded", () => {
@@ -214,9 +229,41 @@
       document.getElementById("mapCloseBtn").addEventListener("click", closeMap);
       $.rangeStart.addEventListener("change", updatePeriodFromControls);
       $.periodSelect.addEventListener("change", updatePeriodFromControls);
+      initSectionToggles();
       initDropZone();
       autoLoadRealData();
     });
+
+    function initSectionToggles() {
+      document.querySelectorAll(".section-header[data-section]").forEach(header => {
+        header.addEventListener("click", () => toggleSection(header.dataset.section));
+        header.addEventListener("keydown", e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleSection(header.dataset.section);
+          }
+        });
+      });
+    }
+
+    function toggleSection(name) {
+      sectionOpen[name] = !sectionOpen[name];
+      const open = sectionOpen[name];
+      const body = document.getElementById(`${name}Body`);
+      const arrow = document.getElementById(`${name}Arrow`);
+      const label = document.getElementById(`${name}ToggleLabel`);
+      const header = document.querySelector(`.section-header[data-section="${name}"]`);
+      if (body) body.classList.toggle("collapsed", !open);
+      if (arrow) arrow.textContent = open ? "▼" : "▶";
+      if (label) label.textContent = open ? "折りたたむ" : "展開する";
+      if (header) header.setAttribute("aria-expanded", String(open));
+      if (open && name === "viewer") {
+        setTimeout(() => {
+          if (chartSpeedInst) chartSpeedInst.resize();
+          if (chartSalinityInst) chartSalinityInst.resize();
+        }, 300);
+      }
+    }
 
     function initDropZone() {
       $.fileInput.addEventListener("change", e => {
