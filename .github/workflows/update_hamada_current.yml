@@ -1,8 +1,8 @@
-name: Update Hamada offshore current data
+name: Update offshore current data
 
 on:
   schedule:
-    # 21:30 UTC = 06:30 JST. Fetch yesterday's data once per day.
+    # 21:30 UTC = 06:30 JST. Fetch yesterday's data for all points once per day.
     - cron: "30 21 * * *"
   workflow_dispatch:
     inputs:
@@ -26,7 +26,7 @@ on:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: write
 
@@ -45,23 +45,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fetch Hamada current data
+      - name: Fetch offshore current data
         env:
           COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.CMEMS_USERNAME }}
           COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.CMEMS_PASSWORD }}
         run: |
           set -o pipefail
           if [ "${{ github.event.inputs.collect_all }}" = "true" ]; then
-            python scripts/update_hamada_current.py --all 2>&1 | tee /tmp/hamada-current.log
+            python scripts/update_hamada_current.py --all 2>&1 | tee /tmp/offshore-current.log
           elif [ -n "${{ github.event.inputs.start_date }}" ] || [ -n "${{ github.event.inputs.end_date }}" ]; then
-            python scripts/update_hamada_current.py --start "${{ github.event.inputs.start_date }}" --end "${{ github.event.inputs.end_date }}" 2>&1 | tee /tmp/hamada-current.log
+            python scripts/update_hamada_current.py --start "${{ github.event.inputs.start_date }}" --end "${{ github.event.inputs.end_date }}" 2>&1 | tee /tmp/offshore-current.log
           elif [ -n "${{ github.event.inputs.target_date }}" ]; then
-            python scripts/update_hamada_current.py --date "${{ github.event.inputs.target_date }}" 2>&1 | tee /tmp/hamada-current.log
+            python scripts/update_hamada_current.py --date "${{ github.event.inputs.target_date }}" 2>&1 | tee /tmp/offshore-current.log
           else
-            python scripts/update_hamada_current.py 2>&1 | tee /tmp/hamada-current.log
+            python scripts/update_hamada_current.py 2>&1 | tee /tmp/offshore-current.log
           fi
 
-          if grep -qiE "forgot my username|password|unauthorized|invalid credentials" /tmp/hamada-current.log; then
+          if grep -qiE "forgot my username|password|unauthorized|invalid credentials" /tmp/offshore-current.log; then
             echo "::error title=CMEMS authentication failed::Check repository secrets CMEMS_USERNAME and CMEMS_PASSWORD."
             exit 1
           fi
@@ -75,6 +75,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No CSV changes."
           else
-            git commit -m "Update Hamada offshore current data: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]"
+            git commit -m "Update offshore current data: $(date -u +%Y-%m-%dT%H:%M:%SZ) [skip ci]"
             git push
           fi

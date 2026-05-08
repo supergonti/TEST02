@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch and append Hamada offshore current data from Copernicus Marine.
+"""Fetch and append offshore current data for Hamada, Takashima, and Mishima.
 
 Output:
   data/hamada_offshore_current_all.csv
@@ -14,19 +14,29 @@ from __future__ import annotations
 
 import argparse
 import math
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import copernicusmarine as cm
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-import copernicusmarine as cm
+
+@dataclass(frozen=True)
+class Target:
+    name: str
+    lat: float
+    lon: float
 
 
-TARGET_NAME = "浜田沖"
-TARGET_LAT = 34.923889
-TARGET_LON = 132.013278
+TARGETS = [
+    Target("浜田沖", 34.923889, 132.013278),
+    Target("高島沖", 34.845861, 131.820278),
+    Target("見島沖", 34.951972, 131.077111),
+]
+
 OUTPUT_PATH = Path("data/hamada_offshore_current_all.csv")
 
 DATASET_MY = "cmems_mod_glo_phy_my_0.083deg_P1D-m"
@@ -51,7 +61,7 @@ COLUMNS = [
 
 def jst_yesterday() -> date:
     jst = timezone(timedelta(hours=9))
-    return (datetime.now(jst).date() - timedelta(days=1))
+    return datetime.now(jst).date() - timedelta(days=1)
 
 
 def date_range(start: date, end: date) -> list[date]:
@@ -61,17 +71,17 @@ def date_range(start: date, end: date) -> list[date]:
     return [start + timedelta(days=i) for i in range(days + 1)]
 
 
-def cmems_subset(dataset_id: str, variables: list[str], target_date: date) -> xr.Dataset:
+def cmems_subset(dataset_id: str, variables: list[str], target: Target, target_date: date) -> xr.Dataset:
     bbox = 0.12
     return cm.open_dataset(
         dataset_id=dataset_id,
         variables=variables,
         start_datetime=f"{target_date.isoformat()}T00:00:00",
         end_datetime=f"{target_date.isoformat()}T23:59:59",
-        minimum_longitude=TARGET_LON - bbox,
-        maximum_longitude=TARGET_LON + bbox,
-        minimum_latitude=TARGET_LAT - bbox,
-        maximum_latitude=TARGET_LAT + bbox,
+        minimum_longitude=target.lon - bbox,
+        maximum_longitude=target.lon + bbox,
+        minimum_latitude=target.lat - bbox,
+        maximum_latitude=target.lat + bbox,
         minimum_depth=0.0,
         maximum_depth=1.0,
     )
@@ -94,14 +104,14 @@ def normalize_dataset(ds: xr.Dataset) -> xr.Dataset:
     return ds.rename(rename) if rename else ds
 
 
-def merge_daily_dataset(target_date: date) -> xr.Dataset:
+def merge_daily_dataset(target: Target, target_date: date) -> xr.Dataset:
     if target_date <= date(2025, 12, 31):
-        return normalize_dataset(cmems_subset(DATASET_MY, ["uo", "vo", "thetao", "so"], target_date))
+        return normalize_dataset(cmems_subset(DATASET_MY, ["uo", "vo", "thetao", "so"], target, target_date))
 
     parts = [
-        cmems_subset(DATASET_AFC_CUR, ["uo", "vo"], target_date),
-        cmems_subset(DATASET_AFC_TMP, ["thetao"], target_date),
-        cmems_subset(DATASET_AFC_SAL, ["so"], target_date),
+        cmems_subset(DATASET_AFC_CUR, ["uo", "vo"], target, target_date),
+        cmems_subset(DATASET_AFC_TMP, ["thetao"], target, target_date),
+        cmems_subset(DATASET_AFC_SAL, ["so"], target, target_date),
     ]
     try:
         return normalize_dataset(xr.merge(parts, compat="override"))
@@ -110,7 +120,7 @@ def merge_daily_dataset(target_date: date) -> xr.Dataset:
             ds.close()
 
 
-def nearest_value(ds: xr.Dataset, var_name: str) -> float:
+def nearest_value(ds: xr.Dataset, var_name: str, target: Target) -> float:
     if var_name not in ds:
         return float("nan")
 
@@ -126,9 +136,9 @@ def nearest_value(ds: xr.Dataset, var_name: str) -> float:
         da = da.isel(**selection)
 
     if "lat" in da.dims and "lon" in da.dims:
-        da = da.sel(lat=TARGET_LAT, lon=TARGET_LON, method="nearest")
+        da = da.sel(lat=target.lat, lon=target.lon, method="nearest")
     elif "latitude" in da.dims and "longitude" in da.dims:
-        da = da.sel(latitude=TARGET_LAT, longitude=TARGET_LON, method="nearest")
+        da = da.sel(latitude=target.lat, longitude=target.lon, method="nearest")
 
     value = float(np.asarray(da.values).squeeze())
     return value if math.isfinite(value) else float("nan")
@@ -150,37 +160,39 @@ def rounded(value: float, digits: int) -> float | None:
     return round(value, digits) if math.isfinite(value) else None
 
 
-def fetch_day(target_date: date) -> dict:
-    print(f"[fetch] {target_date.isoformat()} {TARGET_NAME}")
-    ds = merge_daily_dataset(target_date)
+def fetch_day(target: Target, target_date: date) -> dict:
+    print(f"[fetch] {target_date.isoformat()} {target.name}")
+    ds = merge_daily_dataset(target, target_date)
     try:
-        u = nearest_value(ds, "u")
-        v = nearest_value(ds, "v")
+        u = nearest_value(ds, "u", target)
+        v = nearest_value(ds, "v", target)
         spd_ms = speed_ms(u, v)
         return {
             "date": target_date.isoformat(),
-            "point": TARGET_NAME,
-            "lat": TARGET_LAT,
-            "lon": TARGET_LON,
+            "point": target.name,
+            "lat": target.lat,
+            "lon": target.lon,
             "u_ms": rounded(u, 4),
             "v_ms": rounded(v, 4),
             "speed_ms": rounded(spd_ms, 4),
             "speed_kn": rounded(spd_ms * 1.944, 4),
             "direction": rounded(direction_deg(u, v), 1),
-            "temp_c": rounded(nearest_value(ds, "temp"), 2),
-            "salinity": rounded(nearest_value(ds, "salt"), 3),
+            "temp_c": rounded(nearest_value(ds, "temp", target), 2),
+            "salinity": rounded(nearest_value(ds, "salt", target), 3),
         }
     finally:
         ds.close()
 
 
-def existing_dates(path: Path) -> set[str]:
+def existing_keys(path: Path) -> set[tuple[str, str]]:
     if not path.exists():
         return set()
     df = pd.read_csv(path, encoding="utf-8-sig")
     if "date" not in df.columns:
         return set()
-    return set(df["date"].astype(str))
+    if "point" not in df.columns:
+        df["point"] = TARGETS[0].name
+    return set(zip(df["date"].astype(str), df["point"].astype(str)))
 
 
 def save_rows(rows: list[dict], output_path: Path) -> None:
@@ -188,23 +200,25 @@ def save_rows(rows: list[dict], output_path: Path) -> None:
     new_df = pd.DataFrame(rows, columns=COLUMNS)
     if output_path.exists():
         old_df = pd.read_csv(output_path, encoding="utf-8-sig")
+        if "point" not in old_df.columns:
+            old_df["point"] = TARGETS[0].name
         df = pd.concat([old_df, new_df], ignore_index=True)
     else:
         df = new_df
     df.drop_duplicates(subset=["date", "point"], keep="last", inplace=True)
-    df.sort_values(["date", "point"], inplace=True)
+    df.sort_values(["point", "date"], inplace=True)
     df.to_csv(output_path, index=False, encoding="utf-8-sig")
     print(f"[ok] wrote {len(df)} rows -> {output_path}")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Update Hamada offshore current CSV")
+    parser = argparse.ArgumentParser(description="Update offshore current CSV for all dashboard points")
     parser.add_argument("--date", help="single date, e.g. 2026-05-07")
-    parser.add_argument("--start", help="start date, e.g. 2026-05-01")
+    parser.add_argument("--start", help="start date, e.g. 2026-02-07")
     parser.add_argument("--end", help="end date, e.g. 2026-05-07")
     parser.add_argument("--all", action="store_true", help="fetch from 2022-01-01 to yesterday JST")
     parser.add_argument("--output", default=str(OUTPUT_PATH))
-    parser.add_argument("--no-skip", action="store_true", help="overwrite existing dates")
+    parser.add_argument("--no-skip", action="store_true", help="overwrite existing dates and points")
     return parser.parse_args()
 
 
@@ -215,8 +229,7 @@ def main() -> int:
     if args.all:
         dates = date_range(date(2022, 1, 1), jst_yesterday())
     elif args.date:
-        one = date.fromisoformat(args.date)
-        dates = [one]
+        dates = [date.fromisoformat(args.date)]
     elif args.start or args.end:
         start = date.fromisoformat(args.start) if args.start else date(2022, 1, 1)
         end = date.fromisoformat(args.end) if args.end else jst_yesterday()
@@ -224,18 +237,20 @@ def main() -> int:
     else:
         dates = [jst_yesterday()]
 
-    done = set() if args.no_skip else existing_dates(output_path)
+    done = set() if args.no_skip else existing_keys(output_path)
     rows = []
     for d in dates:
-        if d.isoformat() in done:
-            print(f"[skip] {d.isoformat()} already exists")
-            continue
-        rows.append(fetch_day(d))
+        for target in TARGETS:
+            key = (d.isoformat(), target.name)
+            if key in done:
+                print(f"[skip] {d.isoformat()} {target.name} already exists")
+                continue
+            rows.append(fetch_day(target, d))
 
     if rows:
         save_rows(rows, output_path)
     else:
-        print("[ok] no new dates to fetch")
+        print("[ok] no new dates or points to fetch")
     return 0
 
 

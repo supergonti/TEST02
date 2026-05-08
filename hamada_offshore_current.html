@@ -43,6 +43,7 @@
     .toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .pill{border:1px solid #c5d5ea;border-radius:18px;background:#fff;color:#4c5b68;padding:5px 13px;font-size:.8rem;cursor:pointer}
     .pill.active{background:#163d63;border-color:#163d63;color:#fff}
+    .point-tabs{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
     .date-input{border:1px solid #c5d5ea;border-radius:6px;padding:4px 8px;font-size:.8rem;color:#34495e;background:#fff}
     .period-select{border:1px solid #c5d5ea;border-radius:6px;background:#fff;color:#34495e;padding:4px 34px 4px 10px;font-size:.86rem}
     .charts{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
@@ -131,6 +132,7 @@
         <span class="toggle-btn"><span class="toggle-arrow" id="viewerArrow">▼</span><span id="viewerToggleLabel">折りたたむ</span></span>
       </div>
       <div class="section-body" id="viewerBody">
+        <div class="point-tabs" id="pointTabs" role="group" aria-label="表示地点"></div>
         <div class="toolbar" role="group" aria-label="基準日から以前の表示期間">
           <input type="date" id="rangeStart" class="date-input" aria-label="基準日">
           <span class="label">から以前の</span>
@@ -216,7 +218,12 @@
   </div>
 
   <script>
-    const TARGET = { name: "浜田沖", lat: 34.923889, lon: 132.013278 };
+    const TARGETS = [
+      { name: "浜田沖", lat: 34.923889, lon: 132.013278, dms: "34°55'26.0\"N 132°00'47.8\"E" },
+      { name: "高島沖", lat: 34.845861, lon: 131.820278, dms: "34°50'45.1\"N 131°49'13.0\"E" },
+      { name: "見島沖", lat: 34.951972, lon: 131.077111, dms: "34°57'07.1\"N 131°04'37.6\"E" }
+    ];
+    const TARGET = TARGETS[0];
     const DIR16 = ["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];
     let allData = [];
     let currentDays = 365;
@@ -224,18 +231,22 @@
     let chartSpeedInst = null;
     let chartSalinityInst = null;
     let mapInstance = null;
+    let mapMarkers = [];
+    let activePoint = TARGET.name;
+    let dataLabel = "";
     const arrowCache = {};
     const sectionOpen = { dashboard: false, viewer: true, missing: true, dataLoad: false };
 
     const $ = {};
     document.addEventListener("DOMContentLoaded", () => {
-      ["headerStatus","fileInput","dropZone","dataNotice","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","periodSelect","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
+      ["headerStatus","fileInput","dropZone","dataNotice","totalRows","totalRowsSub","dateFrom","dateTo","totalDays","missingStatus","missingStatusSub","latestSpeed","latestSpeedSub","rangeStart","periodSelect","pointTabs","chartLabel1","chartLabel2","chartSpeed","chartSalinity","dataTableBody","missingSummaryBar"].forEach(id => $[id] = document.getElementById(id));
       document.getElementById("reloadBtn").addEventListener("click", () => location.reload());
       document.getElementById("manualBtn").addEventListener("click", () => $.fileInput.click());
       document.getElementById("mapBtn").addEventListener("click", openMap);
       document.getElementById("mapCloseBtn").addEventListener("click", closeMap);
       $.rangeStart.addEventListener("change", updatePeriodFromControls);
       $.periodSelect.addEventListener("change", updatePeriodFromControls);
+      initPointTabs();
       initSectionToggles();
       initDropZone();
       autoLoadRealData();
@@ -251,6 +262,34 @@
           }
         });
       });
+    }
+
+    function initPointTabs() {
+      TARGETS.forEach(target => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `pill${target.name === activePoint ? " active" : ""}`;
+        button.textContent = target.name;
+        button.dataset.point = target.name;
+        button.addEventListener("click", () => selectPoint(target.name));
+        $.pointTabs.appendChild(button);
+      });
+    }
+
+    function selectPoint(pointName) {
+      activePoint = pointName;
+      document.querySelectorAll("#pointTabs .pill").forEach(button => {
+        button.classList.toggle("active", button.dataset.point === activePoint);
+      });
+      const dates = uniqDates();
+      if (dates.length) {
+        $.rangeStart.min = dates[0];
+        $.rangeStart.max = dates[dates.length - 1];
+        anchorDate = dates[dates.length - 1];
+        $.rangeStart.value = anchorDate;
+      }
+      updateMapMarker();
+      refreshAll(dataLabel || $.headerStatus.textContent || "");
     }
 
     function toggleSection(name) {
@@ -309,23 +348,29 @@
     function loadDemoData(reason) {
       const rows = [];
       const start = new Date(Date.UTC(2026, 0, 1));
-      for (let i = 0; i < 75; i++) {
-        if (i === 21 || i === 47) continue;
-        const d = new Date(start.getTime() + i * 86400000);
-        const date = d.toISOString().slice(0, 10);
-        const speedKn = 0.75 + Math.sin(i / 5) * 0.42 + (i % 9) * 0.035;
-        const temp = 15.2 + Math.sin(i / 12) * 1.3 + i * 0.025;
-        const salinity = 33.85 + Math.cos(i / 10) * 0.18;
-        rows.push({
-          date,
-          speed_kn: round(speedKn, 2),
-          speed_ms: round(speedKn * 0.514444, 3),
-          direction: Math.round((245 + Math.sin(i / 8) * 70 + i * 3) % 360),
-          temp_c: round(temp, 2),
-          salinity: round(salinity, 3)
-        });
-      }
+      TARGETS.forEach((target, pointIndex) => {
+        for (let i = 0; i < 75; i++) {
+          if (i === 21 || i === 47) continue;
+          const d = new Date(start.getTime() + i * 86400000);
+          const date = d.toISOString().slice(0, 10);
+          const speedKn = 0.75 + Math.sin((i + pointIndex * 3) / 5) * 0.42 + (i % 9) * 0.035;
+          const temp = 15.2 + Math.sin((i + pointIndex * 4) / 12) * 1.3 + i * 0.025;
+          const salinity = 33.85 + Math.cos((i + pointIndex * 5) / 10) * 0.18;
+          rows.push({
+            date,
+            point: target.name,
+            lat: target.lat,
+            lon: target.lon,
+            speed_kn: round(speedKn, 2),
+            speed_ms: round(speedKn * 0.514444, 3),
+            direction: Math.round((245 + Math.sin(i / 8) * 70 + i * 3 + pointIndex * 18) % 360),
+            temp_c: round(temp, 2),
+            salinity: round(salinity, 3)
+          });
+        }
+      });
       allData = rows;
+      dataLabel = "デモデータ";
       $.headerStatus.textContent = "デモデータ表示中";
       $.dataNotice.innerHTML = `${escapeHtml(reason || "実データCSV未検出")} のため、動作確認用デモデータを表示しています。本物データを使うには <strong>data/hamada_offshore_current_all.csv</strong> を追加してください。`;
       refreshAll("デモデータ");
@@ -356,20 +401,22 @@
           salinity: toNum(row.salinity)
         };
       }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date))
-        .filter(r => !r.point || r.point === TARGET.name || nearTarget(r.lat, r.lon));
+        .filter(r => isKnownPoint(r));
       if (!rows.length) {
         alert("読み込める行がありません。date列を含むCSVか確認してください。");
         return;
       }
       allData = rows.sort((a, b) => a.date.localeCompare(b.date));
+      dataLabel = label;
       $.headerStatus.textContent = label;
       refreshAll(label);
     }
 
     function refreshAll(label) {
       const dates = uniqDates();
-      $.totalRows.textContent = allData.length.toLocaleString();
-      $.totalRowsSub.textContent = label;
+      const rows = pointRows();
+      $.totalRows.textContent = rows.length.toLocaleString();
+      $.totalRowsSub.textContent = `${currentTarget().name} / ${label}`;
       $.dateFrom.textContent = dates[0] || "-";
       $.dateTo.textContent = dates[dates.length - 1] || "-";
       $.totalDays.textContent = dates.length.toLocaleString();
@@ -398,10 +445,13 @@
         $.missingStatus.className = "value";
         $.missingStatusSub.textContent = "欠測候補あり";
       }
-      const last = allData.find(r => r.date === dates[dates.length - 1]);
+      const last = pointRows().find(r => r.date === dates[dates.length - 1]);
       if (last) {
         $.latestSpeed.textContent = Number.isFinite(last.speed_kn) ? `${last.speed_kn.toFixed(2)} kn` : "-";
         $.latestSpeedSub.textContent = Number.isFinite(last.direction) ? `${dirLabel(last.direction)} / ${last.direction.toFixed(0)}°` : "-";
+      } else {
+        $.latestSpeed.textContent = "-";
+        $.latestSpeedSub.textContent = "データ未取得";
       }
     }
 
@@ -419,7 +469,7 @@
       if (currentDays < 9999) {
         start = shiftDate(end, -(currentDays - 1));
       }
-      return allData
+      return pointRows()
         .filter(r => r.date >= start && r.date <= end)
         .sort((a, b) => b.date.localeCompare(a.date));
     }
@@ -450,7 +500,7 @@
 
     function renderSpeedChart() {
       const rows = fillDateGaps(getFiltered().slice().reverse());
-      $.chartLabel1.textContent = `浜田沖 / ${rangeLabel()} / 潮流・水温`;
+      $.chartLabel1.textContent = `${currentTarget().name} / ${rangeLabel()} / 潮流・水温`;
       const arrowSize = rows.length <= 14 ? 40 : rows.length <= 45 ? 34 : 28;
       const arrowRadius = rows.length <= 14 ? 12 : rows.length <= 45 ? 10 : 8;
       const arrowPts = rows.map(r => getArrowCanvas(Number.isFinite(r.direction) ? r.direction : 0, arrowSize));
@@ -469,7 +519,7 @@
 
     function renderSalinityChart() {
       const rows = fillDateGaps(getFiltered().slice().reverse());
-      $.chartLabel2.textContent = `浜田沖 / ${rangeLabel()} / 塩分`;
+      $.chartLabel2.textContent = `${currentTarget().name} / ${rangeLabel()} / 塩分`;
       if (chartSalinityInst) chartSalinityInst.destroy();
       chartSalinityInst = new Chart($.chartSalinity.getContext("2d"), {
         type: "line",
@@ -514,13 +564,28 @@
       const modal = document.getElementById("mapModal");
       modal.classList.add("open");
       if (!mapInstance) {
-        mapInstance = L.map("mapContainer").setView([TARGET.lat, TARGET.lon], 11);
+        const target = currentTarget();
+        mapInstance = L.map("mapContainer").setView([target.lat, target.lon], 11);
         L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { attribution:"&copy; Esri", maxZoom:18 }).addTo(mapInstance);
         L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom:18 }).addTo(mapInstance);
-        L.marker([TARGET.lat, TARGET.lon]).addTo(mapInstance).bindPopup(`<strong>${TARGET.name}</strong><br>${TARGET.lat.toFixed(6)}°N / ${TARGET.lon.toFixed(6)}°E`).openPopup();
       }
+      updateMapMarker();
       setTimeout(() => mapInstance.invalidateSize(), 120);
       document.addEventListener("keydown", mapEscHandler);
+    }
+
+    function updateMapMarker() {
+      if (!mapInstance) return;
+      mapMarkers.forEach(marker => marker.remove());
+      mapMarkers = TARGETS.map(target => {
+        const marker = L.marker([target.lat, target.lon]).addTo(mapInstance)
+          .bindPopup(`<strong>${target.name}</strong><br>${target.lat.toFixed(6)}°N / ${target.lon.toFixed(6)}°E`);
+        if (target.name === activePoint) {
+          marker.openPopup();
+          mapInstance.setView([target.lat, target.lon], 11);
+        }
+        return marker;
+      });
     }
 
     function closeMap() {
@@ -550,7 +615,15 @@
     }
 
     function uniqDates() {
-      return [...new Set(allData.map(r => r.date))].sort();
+      return [...new Set(pointRows().map(r => r.date))].sort();
+    }
+
+    function pointRows() {
+      return allData.filter(r => r.point === activePoint);
+    }
+
+    function currentTarget() {
+      return TARGETS.find(target => target.name === activePoint) || TARGET;
     }
 
     function getMissingDates(sorted) {
@@ -622,9 +695,19 @@
       return Number.isFinite(n) ? n : NaN;
     }
 
-    function nearTarget(lat, lon) {
+    function isKnownPoint(row) {
+      if (TARGETS.some(target => row.point === target.name)) return true;
+      const target = nearestTarget(row.lat, row.lon);
+      if (target) {
+        row.point = target.name;
+        return true;
+      }
+      return false;
+    }
+
+    function nearestTarget(lat, lon) {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-      return Math.abs(lat - TARGET.lat) <= 0.15 && Math.abs(lon - TARGET.lon) <= 0.15;
+      return TARGETS.find(target => Math.abs(lat - target.lat) <= 0.15 && Math.abs(lon - target.lon) <= 0.15) || null;
     }
 
     function finiteOrNull(v) {
