@@ -2,9 +2,8 @@
 
 作成日: 2026-05-09 JST  
 作業フォルダ: `C:\Codex\Dev\hamada_offshore_current`  
-旧作業フォルダ名: `C:\Codex\Dev\TEST02`  
-GitHubリポジトリ: `https://github.com/supergonti/TEST02`  
-GitHub Pages: `https://supergonti.github.io/TEST02/hamada_offshore_current.html`
+GitHubリポジトリ: `https://github.com/supergonti/hamada_offshore_current`  
+GitHub Pages: `https://supergonti.github.io/hamada_offshore_current/hamada_offshore_current.html`
 
 ## 目的
 
@@ -164,7 +163,7 @@ C:\Codex\Dev\hamada_offshore_current
 GitHub remote:
 
 ```text
-origin https://github.com/supergonti/TEST02.git
+origin https://github.com/supergonti/hamada_offshore_current.git
 ```
 
 ブランチ:
@@ -176,7 +175,7 @@ master
 公開URL:
 
 ```text
-https://supergonti.github.io/TEST02/hamada_offshore_current.html
+https://supergonti.github.io/hamada_offshore_current/hamada_offshore_current.html
 ```
 
 push前には必ず3層スキャンを実行する。
@@ -197,12 +196,15 @@ $env:PYTHONIOENCODING='utf-8'
 | `eab842b` | 3地点切り替えと3地点データ取得に対応 |
 | `32c3472` | データ読み込み欄を下部へ移動 |
 
+## 名称移行メモ
+
+- 2026-05-09にローカル作業フォルダを `C:\Codex\Dev\hamada_offshore_current` に移行
+- 2026-05-09にGitHubリポジトリ名をテスト用名称から `hamada_offshore_current` へ変更
+- GitHub Pages URLも `https://supergonti.github.io/hamada_offshore_current/hamada_offshore_current.html` へ変更
+- 旧テスト用フォルダは不要になったため削除対象
+
 ## 注意点
 
-- ローカル作業フォルダ名は `TEST02` から `hamada_offshore_current` へ変更する意図だったが、Windows側で旧フォルダが使用中になり直接リネームできなかったため、同内容を新フォルダへコピーして作成した
-- 旧フォルダ `C:\Codex\Dev\TEST02` はロックが外れた後に整理可能
-- GitHubリポジトリ名とPages URLはまだ `TEST02` のまま
-- GitHub側リポジトリ名も変更する場合、Pages URLやremote URLが変わるため別途対応が必要
 - Actionsログに Node.js 20 deprecation の警告が出たが、2026-05-08時点では動作成功済み
 - Chart.jsとLeafletはCDN依存のため、オフラインでは完全表示できない
 - 実データCSVが存在しない場合、HTMLはデモデータへフォールバックする
